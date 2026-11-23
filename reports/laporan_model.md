@@ -21,7 +21,7 @@ Karena data berupa deret waktu harian (22.835 baris, 2 Jan 2010 – 27 Feb 2025,
 | **Sub-latih (64%)** | 14.614 | 2010-01-02 s.d. 2019-06-05 | 20,7% | 65,1% | 14,2% | Melatih model saat eksperimen & *tuning* |
 | **Validasi (16%)** | 3.654 | 2019-06-06 s.d. 2021-08-01 | 13,9% | 70,8% | 15,3% | Memilih model & setelan terbaik |
 | **Total Latih (80%)** | 18.268 | 2010-01-02 s.d. 2021-08-01 | 19,4% | 66,3% | 14,4% | Melatih ulang model final |
-| **Uji (20%)** | 4.567 | 2021-08-02 s.d. 2025-02-27 | 12,4% | 77,4% | 10,2% | Evaluasi akhir (**dipakai sekali saja**) |
+| **Uji (20%)** | 4.567 | 2021-08-02 s.d. 2025-02-27 | 12,4% | 77,4% | 10,2% | Evaluasi akhir (*tidak dipakai untuk memilih model*) |
 
 ### 1.3 Metrik Evaluasi & Baseline
 Sebagai pembanding minimal, digunakan **Baseline Persistensi** (`ISPU besok = ISPU hari ini`). Selain kesalahan numerik (**MAE** dan **RMSE**), kinerja operasional diukur dengan:
@@ -95,10 +95,23 @@ Grafik pendukung tersimpan di:
 - `reports/figures/9_prediksi_vs_aktual_dan_musiman.png` — sebaran prediksi vs aktual serta efek musiman bulanan yang dipelajari model.
 
 ### Mengapa `Ridge + OHE bulan (w_sedang=0.30)` Dipilih sebagai Model Final?
-1. **Konsisten mengalahkan baseline di seluruh 4 metrik baik pada validasi maupun uji.** Pada data uji, model menurunkan MAE (11,24 vs 11,42) dan RMSE (15,06 vs 16,05), menaikkan akurasi kategori (+1,0 poin ke 80,4%), menaikkan deteksi hari Tidak Sehat (+5,4 poin ke **52,3%** — naik +21,3 poin dari Linear Regression standar 31,0%), serta menaikkan ketepatan alarm (+1,8 poin ke 48,6%) dan F1 Tidak Sehat (+3,6 poin ke 50,4%).
-2. **Terkalibrasi baik untuk hari Tidak Sehat.** Linear Regression standar hanya berani menebak > 100 di 4,9% hari uji (rata-rata prediksi 94,3 saat aktual 113,5), sedangkan model terpilih menebak > 100 di **10,9%** hari uji — sangat dekat dengan proporsi aktual **10,2%** — dengan rata-rata prediksi **101,5** pada hari Tidak Sehat.
-3. **Menangkap pola musiman EDA secara langsung dan interpretabel.** Koefisien *One-Hot* `bulan` yang dipelajari model naik bertahap dari Januari (`+0,0`) hingga puncak September (`+11,8`) dan Oktober (`+11,9`), lalu turun tajam kembali di Desember (`+0,0`), sesuai persis dengan grafik musiman pada EDA. Koefisien fitur lain juga konsisten dengan EDA: `ispu_hari_ini` (`+0,619`) sebagai prediktor terkuat, diikuti `ispu_kemarin` (`+0,245`), dan pengaruh `hari` yang kecil (`-0,481`).
-4. **Deterministik, lebih stabil dari model pohon, dan sangat ringan.** Berbeda dari *undersampling* acak yang membuang ~68% baris `SEDANG`, `sample_weight` memakai 100% data latih tanpa unsur acak. Dibanding `Gradient Boosting Huber (w=0.45)`, `Ridge + OHE (w=0.30)` lebih tahan terhadap pergeseran distribusi pasca-2021 (TS ketangkep 52,3% vs 47,3%, akurasi 80,4% vs 79,5%). Ukuran `models/model.pkl` hanya **3.292 bytes (0,003 MB)**, memuat instan di Streamlit Cloud, dan hanya memakai kelas standar `scikit-learn`.
+
+Pemilihan model dilakukan **hanya berdasarkan data validasi**. Data uji tidak digunakan dalam proses pemilihan.
+
+Pada data validasi, terdapat dua kandidat yang mengalahkan baseline di keempat metrik utama, dengan kinerja yang hampir setara:
+
+| Kandidat (validasi) | MAE | Akurasi Kategori | TS Ketangkep | Alarm Benar |
+|---|---:|---:|---:|---:|
+| Ridge + OHE bulan (`w_sedang=0.30`) | 15,15 | 74,2% | 49,3% | 49,0% |
+| Gradient Boosting Huber (`w_sedang=0.45`) | 14,69 | 74,1% | 49,3% | 50,2% |
+
+Kemampuan mendeteksi hari Tidak Sehat keduanya sama (49,3%). Gradient Boosting unggul tipis pada MAE dan ketepatan alarm, sedangkan Ridge unggul tipis pada akurasi kategori. Karena selisihnya kecil, tim memilih model yang **lebih sederhana dan lebih mudah dijelaskan**, yaitu Ridge + OHE bulan, dengan pertimbangan:
+
+1. **Mudah diinterpretasikan.** Setiap koefisien memiliki arti yang jelas. Koefisien `ispu_hari_ini` (+0,619) menjadi prediktor terkuat, diikuti `ispu_kemarin` (+0,245). Koefisien *One-Hot* `bulan` naik bertahap dari Januari (+0,0) hingga puncak September (+11,8) dan Oktober (+11,9), lalu turun kembali di Desember, sesuai dengan pola musiman pada EDA.
+2. **Lebih sederhana.** Model linear lebih mudah dipertanggungjawabkan dan dijelaskan kepada pengguna dibandingkan ansambel 150 pohon.
+3. **Sangat ringan.** Ukuran `models/model.pkl` hanya 3.292 bytes (0,003 MB), dibandingkan 0,195 MB untuk Gradient Boosting, sehingga dimuat instan di aplikasi.
+
+Setelah dipilih, model dilatih ulang pada seluruh data latih dan dievaluasi pada data uji. Hasilnya, model tetap mengalahkan baseline di keempat metrik: MAE 11,24 (baseline 11,42), akurasi kategori 80,4% (79,4%), TS ketangkep 52,3% (46,9%), dan alarm benar 48,6% (46,8%).
 
 ---
 
@@ -118,8 +131,8 @@ Grafik pendukung tersimpan di:
 - Pada stasiun yang jarang mengalami hari Tidak Sehat (DKI1 & DKI3), sebagian besar kejadian Tidak Sehat berupa lonjakan singkat sehingga lebih sulit diprediksi hanya dari histori ISPU.
 
 ### 4.2 Keterbatasan Model & Catatan Target Rubrik "85%"
-1. **Lonjakan mendadak (53,1%):** di data uji, **53,1%** hari Tidak Sehat terjadi setelah hari yang ISPU-nya masih ≤ 100. Tanpa sinyal eksternal (misalnya pola angin mikro, inversi suhu lokal, atau kejadian emisi mendadak), batas atas deteksi hari Tidak Sehat secara alamiah terbatas di sekitar ~50%.
-2. **Upaya fitur tambahan yang sudah diuji tim:** penambahan fitur lag 2 hari / rata-rata 7 hari / identitas stasiun maupun data cuaca ERA5 Open-Meteo (hujan, angin, suhu) hanya menaikkan akurasi ±0,5 poin (MAE 10,67 → 10,39) sehingga tidak sepadan dengan kompleksitas integrasi API cuaca di aplikasi.
+1. **Lonjakan mendadak (53,1%):** di data uji, **53,1%** hari Tidak Sehat terjadi setelah hari yang ISPU-nya masih ≤ 100. Karena model hanya melihat riwayat ISPU, lonjakan seperti ini sulit diprediksi. Peningkatan deteksi hari Tidak Sehat kemungkinan memerlukan data tambahan, seperti data cuaca atau kejadian emisi.
+2. **Fitur yang belum diuji:** model hanya menggunakan riwayat ISPU dan informasi waktu. Penambahan fitur lain, seperti data cuaca (hujan, angin, suhu) atau rata-rata ISPU beberapa hari, belum diuji dan menjadi rencana pengembangan berikutnya.
 3. **Target rubrik "85% akurat":** pada seluruh eksperimen (termasuk model non-linear seperti Random Forest dan Gradient Boosting), akurasi kategori maksimal di data uji berada di **80,4%–82,2%** (meski pada stasiun tertentu seperti DKI3 mencapai 87,8%). Hal ini wajar untuk peramalan kualitas udara harian berfitur historis singkat dan menunjukkan perlunya transparansi keterbatasan model saat presentasi.
 
 ---
@@ -128,4 +141,4 @@ Grafik pendukung tersimpan di:
 
 1. **Asimetri Risiko Kesalahan (*False Negative* vs *False Positive*):** Dalam konteks kesehatan publik, **kesalahan paling berbahaya adalah *false negative*** — model memprediksi "Sedang" padahal kualitas udara besok "Tidak Sehat", sehingga kelompok rentan (anak-anak, lansia, penderita asma) tetap beraktivitas di luar tanpa perlindungan. Oleh karena itu, model sengaja diimbangi (`w_sedang=0.30`) agar mendeteksi **52,3%** hari Tidak Sehat (naik dari 31,0% pada model standar), menerima sedikit tambahan alarm palsu demi keselamatan pengguna.
 2. **Keterwakilan Spasial:** Data hanya berasal dari **5 stasiun pemantau resmi** di DKI Jakarta. Seperti terlihat pada tabel per stasiun, pola polusi berbeda jauh antarwilayah (DKI4 jauh lebih sering Tidak Sehat dibanding DKI1/DKI3). Hasil prediksi satu stasiun belum tentu mencerminkan kualitas udara mikro di seluruh lingkungan Jakarta.
-3. **Transparansi kepada Pengguna:** Aplikasi Streamlit (Orang 3) perlu mencantumkan keterangan jelas (*disclaimer*) bahwa angka dan kategori yang ditampilkan adalah **hasil prediksi statistik berbasis data historis**, bukan pengumuman resmi pemerintah/BMKG/DLH DKI Jakarta, serta menampilkan ringkasan tingkat kesalahan model secara jujur.
+3. **Transparansi kepada Pengguna:** Aplikasi telah mencantumkan keterangan bahwa angka dan kategori yang ditampilkan adalah **hasil prediksi statistik berbasis data historis** dengan rata-rata kesalahan ±11 poin ISPU, bukan pengumuman resmi pemerintah/BMKG/DLH DKI Jakarta.
